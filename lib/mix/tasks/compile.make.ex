@@ -112,7 +112,7 @@ defmodule Mix.Tasks.Compile.ElixirMake do
 
   defp build(config, task_args) do
     exec      = System.get_env("MAKE") || os_specific_executable(Keyword.get(config, :make_executable, :default))
-    makefile  = Keyword.get(config, :make_makefile, :default)
+    makefile  = Keyword.get(config, :make_makefile, :default) |> os_specific_makefile()
     targets   = Keyword.get(config, :make_targets, [])
     env       = Keyword.get(config, :make_env, %{})
     # In OTP 19, Erlang's `open_port/2` ignores the current working
@@ -169,12 +169,45 @@ defmodule Mix.Tasks.Compile.ElixirMake do
   defp os_specific_executable(:default) do
     case :os.type() do
       {:win32, _} ->
-        "nmake"
+        find_make(["nmake","make"])
       {:unix, type} when type in [:freebsd, :openbsd] ->
         "gmake"
       _ ->
         "make"
     end
+  end
+
+  defp find_make([]) do
+    Mix.raise("""
+    No make found in the path. If you have set the MAKE environment variable,
+    please make sure it is correct.
+    """)
+  end
+
+  defp find_make([make|others]) do
+    cond do
+      System.find_executable(make) ->
+        make
+      true ->
+        find_make(others)
+    end
+  end
+
+  defp os_specific_makefile(:default) do
+    {os_name,_} = :os.type()
+
+    cond do
+      System.get_env("CROSSCOMPILE") -> 
+        "Makefile"
+      os_name == :win32 ->
+        "Makefile.win"
+      true ->
+        "Makefile"
+    end
+  end
+
+  defp os_specific_makefile(makefile) do
+    makefile
   end
 
   defp os_specific_error_msg(msg) when is_binary(msg) do
@@ -191,9 +224,7 @@ defmodule Mix.Tasks.Compile.ElixirMake do
 
   # Returns a list of command-line args to pass to make (or nmake/gmake) in
   # order to specify the makefile to use.
-  defp args_for_makefile("nmake", :default), do: ["/F", "Makefile.win"]
   defp args_for_makefile("nmake", makefile), do: ["/F", makefile]
-  defp args_for_makefile(_, :default), do: []
   defp args_for_makefile(_, makefile), do: ["-f", makefile]
 
   defp print_verbose_info(exec, args) do
